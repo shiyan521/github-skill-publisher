@@ -53,7 +53,7 @@ github-skill-publisher/
 
 | 函数 | 用途 |
 |------|------|
-| `privacy_scan(local_dir)` | 脱敏检查,扫绝对路径/邮箱/手机号/硬编码密钥 |
+| `privacy_scan(local_dir, ignore_files)` | 脱敏检查,扫绝对路径/邮箱/手机号/硬编码密钥 |
 | `create_repo(token, name, desc, private, topics)` | 建空仓 |
 | `upload_dir(token, owner, repo, local_dir, file_order)` | 递归上传整个目录 |
 | `set_topics(token, owner, repo, topics)` | 改 topics |
