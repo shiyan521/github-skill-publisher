@@ -167,19 +167,23 @@ def privacy_scan(local_dir, ignore_files=None):
     """脱敏检查。返回问题列表。
 
     ignore_files: 跳过这些文件名(用于排除规则定义自身)
+    跳过 __pycache__ / .DS_Store 目录；**.git 不跳过**——.git/config 内嵌凭据是重点扫描目标。
     """
     import re
     patterns = [
         (r'<USER_DIR>/[^\s]+', '本地绝对路径'),
+        (r'https?://[^/\s:]+:[^@\s]+@', 'URL 内嵌凭据(https://user:PAT@...)'),
         (r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}', '邮箱'),
         (r'1[3-9][0-9]{9}', '手机号'),
         (r'sk-[A-Za-z0-9]{20,}', 'OpenAI key'),
         (r'ghp_[A-Za-z0-9]{20,}', 'GitHub PAT (classic)'),
         (r'github_pat_[A-Za-z0-9]{20,}', 'GitHub PAT (fine-grained)'),
     ]
+    SKIP_DIRS = {'__pycache__', '.DS_Store'}
     ignore_files = ignore_files or []
     issues = []
     for root, dirs, files in os.walk(local_dir):
+        dirs[:] = [d for d in dirs if d not in SKIP_DIRS]  # 不进入敏感目录
         for f in files:
             full = os.path.join(root, f)
             # 跳过规则定义自身(脚本和 SKILL.md)
@@ -194,6 +198,36 @@ def privacy_scan(local_dir, ignore_files=None):
                 m = re.search(pat, content)
                 if m:
                     issues.append((full, desc, m.group()[:60]))
+    return issues
+
+
+def check_metadata(local_dir, repo_name):
+    """元数据检查：LICENSE 署名统一 + frontmatter name 与仓库名一致。
+
+    返回问题列表。
+    """
+    import re
+    issues = []
+    license_path = os.path.join(local_dir, 'LICENSE')
+    if os.path.exists(license_path):
+        with open(license_path, 'r', encoding='utf-8') as fp:
+            lic = fp.read()
+        m = re.search(r'Copyright \(c\)\s*\d{4}\s*(.*)', lic)
+        holder = m.group(1).strip() if m else ''
+        if not holder:
+            issues.append((license_path, 'LICENSE 署名缺失', '必须为 "Copyright (c) <年份> Shi Yan"'))
+        elif holder.lower() != 'shi yan':
+            issues.append((license_path, f'LICENSE 署名不一致: "{holder}"', '统一为 "Copyright (c) <年份> Shi Yan"'))
+    else:
+        issues.append((license_path, 'LICENSE 缺失', '补 MIT LICENSE'))
+
+    skill_path = os.path.join(local_dir, 'SKILL.md')
+    if os.path.exists(skill_path):
+        with open(skill_path, 'r', encoding='utf-8') as fp:
+            head = fp.read(512)
+        m = re.search(r'^name:\s*(\S+)', head, re.MULTILINE)
+        if m and m.group(1) != repo_name:
+            issues.append((skill_path, f'frontmatter name "{m.group(1)}" != 仓库名 "{repo_name}"', '保持 name = 目录名 = 仓库名'))
     return issues
 
 
@@ -226,6 +260,16 @@ def main():
         print('请先修复再发布。')
         sys.exit(1)
     print('  ✅ 干净')
+
+    # 1.5 元数据检查(LICENSE 署名 / frontmatter name)
+    print('\n=== 元数据检查 ===')
+    meta_issues = check_metadata(local_dir, repo)
+    if meta_issues:
+        for path, desc, hint in meta_issues:
+            print(f'   {path}: {desc} -> {hint}')
+        print('请先修复再发布。')
+        sys.exit(1)
+    print('  ✅ 通过')
 
     # 2. 建仓
     print(f'\n=== 建仓 {owner}/{repo} ===')
